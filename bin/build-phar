@@ -1,0 +1,25 @@
+#!/usr/bin/php -d phar.readonly=0
+<?php
+$destinationFile = __DIR__.'/csv2json';
+$pharFile = '/tmp/csv2json.phar';
+
+if (file_exists($pharFile)) {
+    unlink($pharFile);
+}
+
+if (file_exists($destinationFile)) {
+    unlink($destinationFile);
+}
+
+$phar = new Phar($pharFile);
+$phar->startBuffering();
+$defaultStub = $phar->createDefaultStub('csv2json.php');
+$phar->buildFromDirectory(__DIR__.'/../src/');
+$stub = "#!/usr/bin/env php \n" . $defaultStub;
+$phar->setStub($stub);
+$phar->stopBuffering();
+$phar->compressFiles(Phar::GZ);
+rename($pharFile, $destinationFile);
+chmod($destinationFile, 0770);
+
+echo "$destinationFile successfully created\n";

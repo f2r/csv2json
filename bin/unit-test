@@ -1,0 +1,122 @@
+#!/usr/bin/env php
+<?php
+namespace f2r\Csv2Json\Test;
+
+final class AssertException extends \Exception {}
+
+final class UnitTest
+{
+    public static function assert(bool $success, string $message = null): void
+    {
+        if ($success === false) {
+            $trace = debug_backtrace();
+            $failedMessage = sprintf('Assertion fail at "%s:%d"', basename($trace[0]['file']), $trace[0]['line']);
+            if ($message !== null) {
+                $failedMessage .= ': '.$message;
+            }
+            throw new AssertException($failedMessage);
+        }
+    }
+
+    public static function assertThatThrowException(string $exceptionClass, callable $callable): void
+    {
+        $error = null;
+        try {
+            $callable();
+            $trace = debug_backtrace();
+            $error = sprintf(
+                'Should throws an exception "%s" at "%s:%d"',
+                $exceptionClass,
+                $trace[0]['file'],
+                $trace[0]['line']
+            );
+        } catch (\Throwable $exception) {
+            if ($exception instanceof $exceptionClass === false) {
+                $trace = debug_backtrace();
+                $error = sprintf(
+                    'Test has not thrown the right exception. Waiting for "%s", got "%s" at "%s:%d"',
+                    $exceptionClass,
+                    get_class($exception),
+                    $trace[0]['file'],
+                    $trace[0]['line']
+                );
+            }
+        }
+        if ($error !== null) {
+            throw new AssertException($error);
+        }
+    }
+}
+\spl_autoload_register(function ($classname) {
+    if (strpos($classname, 'f2r\Csv2Json') !== 0) {
+        throw new \RuntimeException("Unknow namespace for class {$classname}");
+    }
+    $file = __DIR__.'/../src/'.str_replace('\\', '/', substr($classname, 13)).'.php';
+    if (is_readable($file) === false) {
+        $trace = debug_backtrace();
+        $where = $trace[1]['file'].':'.$trace[1]['line'];
+        throw new \RuntimeException("Could not found class {$classname} at {$trace[1]['file']}:{$trace[1]['line']}");
+    }
+
+    require $file;
+});
+
+class MemoryFile extends \SplFileObject
+{
+    public function __construct(string $data)
+    {
+        parent::__construct('php://memory', 'w+');
+        $this->fwrite($data);
+        $this->seek(0);
+    }
+
+}
+
+if (isset($argv[1]) && is_readable($argv[1])) {
+    try {
+        require $argv[1];
+        fprintf(\STDOUT, "Test \"%s\" succeeded\n", basename($argv[1], '.php'));
+        exit(0);
+    } catch (AssertException $exception) {
+        fprintf(\STDERR, "%s\n", $exception->getMessage());
+        exit(1);
+    } catch (\Throwable $exception) {
+        fprintf(
+            \STDERR,
+            "%s: %s at \"%s:%d\"\n",
+            get_class($exception),
+            $exception->getMessage(),
+            $exception->getFile(),
+            $exception->getLine()
+        );
+        exit(1);
+    }
+}
+$nbTests = 0;
+$testFailed = [];
+foreach (glob(__DIR__.'/../tests/*.php') as $file) {
+    $nbTests++;
+    $descriptor = [
+        ['pipe', 'r'],
+        ['pipe', 'w'],
+        ['pipe', 'w']
+    ];
+    $process = proc_open($argv[0].' '.$file, $descriptor, $pipes);
+    $err = stream_get_contents($pipes[2]);
+    $return = proc_close($process);
+
+    if ($return !== 0) {
+        $testFailed[] = $err;
+    }
+}
+echo "\nTests executed: {$nbTests}\n\n";
+if ($testFailed !== []) {
+    printf("%d Tests failed !\n\n", count($testFailed));
+    echo implode('', $testFailed);
+    echo "\n";
+    exit(1);
+}
+echo "All tests are successful !\n";
+exit(0);
+
+
